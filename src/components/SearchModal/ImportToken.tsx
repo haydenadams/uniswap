@@ -18,6 +18,8 @@ import ListLogo from 'components/ListLogo'
 import { ExplorerDataType, getExplorerLink } from '../../utils/getExplorerLink'
 import { PaddedColumn } from './styleds'
 import { Plural, Trans } from '@lingui/macro'
+import { shortenAddress } from 'utils'
+import { IS_WITHIN_IFRAME } from 'constants/misc'
 
 const Wrapper = styled.div`
   position: relative;
@@ -33,10 +35,11 @@ const WarningWrapper = styled(Card)<{ highWarning: boolean }>`
 
 const AddressText = styled(TYPE.blue)`
   font-size: 12px;
+  word-break: break-all;
 
   ${({ theme }) => theme.mediaWidth.upToSmall`
     font-size: 10px;
-`}
+  `}
 `
 
 interface ImportProps {
@@ -97,7 +100,9 @@ export function ImportToken({ tokens, list, onBack, onDismiss, handleCurrencySel
                 </AutoColumn>
                 {chainId && (
                   <ExternalLink href={getExplorerLink(chainId, token.address, ExplorerDataType.ADDRESS)}>
-                    <AddressText fontSize={12}>{token.address}</AddressText>
+                    <AddressText fontSize={12}>
+                      {IS_WITHIN_IFRAME ? shortenAddress(token.address) : token.address}
+                    </AddressText>
                   </ExternalLink>
                 )}
                 {list !== undefined ? (

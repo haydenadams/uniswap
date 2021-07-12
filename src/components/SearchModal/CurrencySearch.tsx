@@ -24,6 +24,7 @@ import useTheme from 'hooks/useTheme'
 import ImportRow from './ImportRow'
 import { Edit } from 'react-feather'
 import useDebounce from 'hooks/useDebounce'
+import { IS_WITHIN_IFRAME } from 'constants/misc'
 
 const ContentWrapper = styled(Column)`
   width: 100%;
@@ -192,7 +193,7 @@ export function CurrencySearch({
             onKeyDown={handleEnter}
           />
         </Row>
-        {showCommonBases && (
+        {showCommonBases && !IS_WITHIN_IFRAME && (
           <CommonBases chainId={chainId} onSelect={handleCurrencySelect} selectedCurrency={selectedCurrency} />
         )}
       </PaddedColumn>
