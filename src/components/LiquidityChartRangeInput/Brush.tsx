@@ -1,14 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { BrushBehavior, brushX, D3BrushEvent, ScaleLinear, select } from 'd3'
 import styled from 'styled-components/macro'
-import { brushHandleAccentPath, brushHandlePath } from 'components/LiquidityChartRangeInput/svg'
+import { brushHandleAccentPath, brushHandlePath, caretPath } from 'components/LiquidityChartRangeInput/svg'
 import usePrevious from 'hooks/usePrevious'
 
 const Handle = styled.path<{ color: string }>`
   cursor: ew-resize;
   pointer-events: none;
 
-  stroke-width: 4;
+  stroke-width: 3;
   stroke: ${({ color }) => color};
   fill: ${({ color }) => color};
 `
@@ -20,6 +20,13 @@ const HandleAccent = styled.path`
   stroke-width: 1.5;
   stroke: ${({ theme }) => theme.white};
   opacity: 0.6;
+`
+
+const OutOfViewIndicator = styled.path`
+  stroke: ${({ theme }) => theme.primaryText1};
+  stroke-width: 4;
+  fill: transparent;
+  cursor: zoom-out;
 `
 
 const LabelGroup = styled.g<{ visible: boolean }>`
@@ -53,6 +60,7 @@ export const Brush = ({
   innerHeight,
   westHandleColor,
   eastHandleColor,
+  resetZoom,
 }: {
   id: string
   xScale: ScaleLinear<number, number>
@@ -64,6 +72,7 @@ export const Brush = ({
   innerHeight: number
   westHandleColor: string
   eastHandleColor: string
+  resetZoom: () => void
 }) => {
   const brushRef = useRef<SVGGElement | null>(null)
   const brushBehavior = useRef<BrushBehavior<SVGGElement> | null>(null)
@@ -76,7 +85,9 @@ export const Brush = ({
   const previousBrushExtent = usePrevious(brushExtent)
 
   const brushed = useCallback(
-    ({ type, selection }: D3BrushEvent<unknown>) => {
+    (event: D3BrushEvent<unknown>) => {
+      const { type, selection } = event
+
       if (!selection) {
         setLocalBrushExtent(null)
         return
@@ -136,14 +147,25 @@ export const Brush = ({
     brushBehavior.current.move(select(brushRef.current) as any, brushExtent.map(xScale) as any)
   }, [brushExtent, xScale])
 
+  // show labels when local brush changes
   useEffect(() => {
     setShowLabels(true)
     const timeout = setTimeout(() => setShowLabels(false), 1500)
     return () => clearTimeout(timeout)
   }, [localBrushExtent])
 
+  // variables to help render the svgs
   const flipWestHandle = localBrushExtent && xScale(localBrushExtent[0]) > FLIP_HANDLE_THRESHOLD_PX
   const flipEastHandle = localBrushExtent && xScale(localBrushExtent[1]) > innerWidth - FLIP_HANDLE_THRESHOLD_PX
+
+  const showWestArrow = localBrushExtent && (xScale(localBrushExtent[0]) < 0 || xScale(localBrushExtent[1]) < 0)
+  const showEastArrow =
+    localBrushExtent && (xScale(localBrushExtent[0]) > innerWidth || xScale(localBrushExtent[1]) > innerWidth)
+
+  const westHandleInView =
+    localBrushExtent && xScale(localBrushExtent[0]) >= 0 && xScale(localBrushExtent[0]) <= innerWidth
+  const eastHandleInView =
+    localBrushExtent && xScale(localBrushExtent[1]) >= 0 && xScale(localBrushExtent[1]) <= innerWidth
 
   return useMemo(
     () => (
@@ -156,11 +178,7 @@ export const Brush = ({
 
           {/* clips at exactly the svg area */}
           <clipPath id={`${id}-brush-clip`}>
-            <rect x="0" y="0" width={innerWidth} height="100%" />
-          </clipPath>
-
-          <clipPath id={`${id}-handles-clip`}>
-            <rect x="0" y="0" width="100%" height="100%" />
+            <rect x="0" y="0" width={innerWidth} height={innerHeight} />
           </clipPath>
         </defs>
 
@@ -176,65 +194,76 @@ export const Brush = ({
         {localBrushExtent && (
           <>
             {/* west handle */}
-            <g
-              transform={`translate(${Math.max(0, xScale(localBrushExtent[0]))}, 0), scale(${
-                flipWestHandle ? '-1' : '1'
-              }, 1)`}
-            >
-              <g clipPath={`url(#${id}-handles-clip)`}>
-                <Handle color={westHandleColor} d={brushHandlePath(innerHeight)} />
-                <HandleAccent d={brushHandleAccentPath()} />
-              </g>
+            {westHandleInView ? (
+              <g transform={`translate(${xScale(localBrushExtent[0])}, 0), scale(${flipWestHandle ? '-1' : '1'}, 1)`}>
+                <g>
+                  <Handle color={westHandleColor} d={brushHandlePath(innerHeight)} />
+                  <HandleAccent d={brushHandleAccentPath()} />
+                </g>
 
-              <LabelGroup
-                transform={`translate(50,0), scale(${flipWestHandle ? '1' : '-1'}, 1)`}
-                visible={showLabels || hovering}
-              >
-                <TooltipBackground y="0" x="-30" height="30" width="60" rx="8" />
-                <Tooltip transform={`scale(-1, 1)`} y="15" dominantBaseline="middle">
-                  {brushLabelValue('w', localBrushExtent[0])}
-                </Tooltip>
-              </LabelGroup>
-            </g>
+                <LabelGroup
+                  transform={`translate(50,0), scale(${flipWestHandle ? '1' : '-1'}, 1)`}
+                  visible={showLabels || hovering}
+                >
+                  <TooltipBackground y="0" x="-30" height="30" width="60" rx="8" />
+                  <Tooltip transform={`scale(-1, 1)`} y="15" dominantBaseline="middle">
+                    {brushLabelValue('w', localBrushExtent[0])}
+                  </Tooltip>
+                </LabelGroup>
+              </g>
+            ) : null}
 
             {/* east handle */}
-            <g
-              transform={`translate(${Math.min(xScale(localBrushExtent[1]), innerWidth)}, 0), scale(${
-                flipEastHandle ? '-1' : '1'
-              }, 1)`}
-            >
-              <g clipPath={`url(#${id}-handles-clip)`}>
-                <Handle color={eastHandleColor} d={brushHandlePath(innerHeight)} />
-                <HandleAccent d={brushHandleAccentPath()} />
-              </g>
+            {eastHandleInView ? (
+              <g transform={`translate(${xScale(localBrushExtent[1])}, 0), scale(${flipEastHandle ? '-1' : '1'}, 1)`}>
+                <g>
+                  <Handle color={eastHandleColor} d={brushHandlePath(innerHeight)} />
+                  <HandleAccent d={brushHandleAccentPath()} />
+                </g>
 
-              <LabelGroup
-                transform={`translate(50,0), scale(${flipEastHandle ? '-1' : '1'}, 1)`}
-                visible={showLabels || hovering}
-              >
-                <TooltipBackground y="0" x="-30" height="30" width="60" rx="8" />
-                <Tooltip y="15" dominantBaseline="middle">
-                  {brushLabelValue('e', localBrushExtent[1])}
-                </Tooltip>
-              </LabelGroup>
-            </g>
+                <LabelGroup
+                  transform={`translate(50,0), scale(${flipEastHandle ? '-1' : '1'}, 1)`}
+                  visible={showLabels || hovering}
+                >
+                  <TooltipBackground y="0" x="-30" height="30" width="60" rx="8" />
+                  <Tooltip y="15" dominantBaseline="middle">
+                    {brushLabelValue('e', localBrushExtent[1])}
+                  </Tooltip>
+                </LabelGroup>
+              </g>
+            ) : null}
+
+            {showWestArrow && <OutOfViewIndicator d={caretPath(innerHeight)} onClick={resetZoom} />}
+
+            {showEastArrow && (
+              <OutOfViewIndicator
+                d={caretPath(innerHeight)}
+                transform={`translate(${innerWidth}, 0) scale(-1, 1)`}
+                onClick={() => resetZoom()}
+              />
+            )}
           </>
         )}
       </>
     ),
     [
-      brushLabelValue,
-      eastHandleColor,
-      flipEastHandle,
-      flipWestHandle,
-      hovering,
       id,
-      innerHeight,
-      innerWidth,
-      localBrushExtent,
-      showLabels,
       westHandleColor,
+      eastHandleColor,
+      innerWidth,
+      innerHeight,
+      localBrushExtent,
+      westHandleInView,
       xScale,
+      flipWestHandle,
+      showLabels,
+      hovering,
+      brushLabelValue,
+      eastHandleInView,
+      flipEastHandle,
+      showWestArrow,
+      resetZoom,
+      showEastArrow,
     ]
   )
 }
